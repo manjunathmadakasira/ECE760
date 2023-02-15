@@ -2,8 +2,10 @@ import numpy as np
 import pandas as pd
 import math
 import argparse
+import matplotlib.pylab as plt
 
 class Node:
+    num_nodes = 0
     def __init__(self, feature=None, threshold=0, left=None, right=None, leaf=True,igr=0):
         self.leaf = leaf
         self.prediction = None
@@ -15,6 +17,8 @@ class Node:
         self.num_child_nodes_left = 0
         self.num_child_nodes_right = 0
         self.igr = igr
+        if (leaf==False):
+            type(self).num_nodes = type(self).num_nodes + 1
 
 def give_entropy(df):
     #entropy calc
@@ -110,8 +114,7 @@ def build_decision_tree(df,feature_list):
     #If entropy is zero for all candidate splits=>value is same across all items for all features
 
     if (num_true==0 or num_false==0 or all_candidate_split_entropy(df,feature_list)==True):
-        nd = Node()
-        nd.leaf = True
+        nd = Node(leaf=True)
         nd.num_child_nodes = num_true + num_false
         if (num_true>=num_false):
             nd.prediction = 1
@@ -131,6 +134,42 @@ def build_decision_tree(df,feature_list):
         nd.left = build_decision_tree(split_then_df,feature_list)
         nd.right = build_decision_tree(split_else_df,feature_list)
         return(nd)
+
+#predict the label for a single point
+def predict_single_point(nd , row_df):
+    if nd.leaf:
+        return nd.prediction
+    if row_df[nd.feature] >= nd.threshold:
+        return predict_single_point(nd.left, row_df)
+    elif row_df[nd.feature] < nd.threshold:
+        return predict_single_point(nd.right, row_df)
+
+def give_accuracy(tree,df_test):
+
+    num_data = df_test.shape[0]
+    num_correct = 0
+    for index,row in df_test.iterrows():
+        prediction = predict_single_point(tree, row)
+        if prediction == row['y']:
+            num_correct += 1
+    err0r = 1 - float(num_correct/num_data)
+    return err0r
+
+def plot_decision_boundary(tree,db_mode):
+    predictions = []
+    x1 = list(np.arange(-1.5,1.51,0.01))*300
+    x2_pre = list(np.arange(-1.5,1.51,0.01))
+    x2 = [ele for ele in x2_pre for _ in range(300)]
+    df_2d = pd.DataFrame({'x1':x1,'x2':x2})
+    for index,row in df_2d.iterrows():
+        prediction = predict_single_point(tree, row)
+        predictions.append(prediction)
+    plt.xlabel("X1")
+    plt.ylabel("X2")
+    plt.title("Decision tree boundaries")
+    plt.scatter(x1,x2,c=predictions,s=4) 
+    plt.savefig('decision_boundary_'+str(db_mode)+'.png') 
+
         
 def show_tree(nd=None, level=0,right_br=False,right_f='x1',right_thresh=0):
     if (right_br==True):
@@ -150,23 +189,54 @@ def load_data(filename):
     print(df)
     return(df)
 
+def prepare_sub_data(df):
+    df = df.sample(frac=1) #shuffle
+    df_train_set = df.head(8192) #first N entries
+    df_test_set = df.tail(1808)
+    print("size of training set=",df_train_set.shape,"test set=",df_test_set.shape)
+    df_train_set_nested_32 = df_train_set.head(32)
+    df_train_set_nested_128 = df_train_set.head(128)
+    df_train_set_nested_512 = df_train_set.head(512)
+    df_train_set_nested_2048 = df_train_set.head(2048)
+    df_train_set_nested_8192 = df_train_set.head(8192)
+    np.savetxt(r'D32.txt', df_train_set_nested_32.values, fmt='%d')
+    np.savetxt(r'D128.txt', df_train_set_nested_128.values, fmt='%d')
+    np.savetxt(r'D512.txt', df_train_set_nested_512.values, fmt='%d')
+    np.savetxt(r'D2048.txt', df_train_set_nested_2048.values, fmt='%d')
+    np.savetxt(r'D8192.txt', df_train_set_nested_8192.values, fmt='%d')
+    np.savetxt(r'Dtest.txt', df_test_set.values, fmt='%d')
+    return ([df_train_set_nested_32,df_train_set_nested_128,df_train_set_nested_512,df_train_set_nested_2048,df_train_set_nested_8192],df_test_set)
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description ='Search some files')
     parser.add_argument('--data_file', dest ='dfile',
                          default ='Druns.txt', help ='Data file with training/test points')
     parser.add_argument('-v', dest ='verbose',
                     action ='store_true', help ='verbose mode')
+    #parser.add_argument('--dbig_mode', dest ='db_mode',type=int,
+    #                     default =32, help ='Training data size mode for 2.7 question.',choices=[32,128,512,2048,8192])
     args = parser.parse_args()
     return args
 
 def main():
     print("Running main")
+    feature_list = ['x1','x2']
+
     args = parse_arguments()
     print("Data file is",args.dfile)
     df = load_data(args.dfile)
-    feature_list = ['x1','x2']
-    tree = build_decision_tree(df,feature_list)
-    show_tree(tree)
+    if (args.dfile=="Dbig.txt"):
+        (df_train_set,df_test_set) = prepare_sub_data(df)
+        for idx,db_mode in enumerate ([32,128,512,2048,8192]):
+            tree=None
+            tree = build_decision_tree(df_train_set[idx],feature_list)
+            accuracy = give_accuracy(tree,df_test_set)
+            print("Accuracy is ",accuracy)
+            print("Number of nodes is ",tree.num_nodes)
+            plot_decision_boundary(tree,db_mode)
+    else:
+        tree = build_decision_tree(df,feature_list)
+    #show_tree(tree)
 
 if __name__ == "__main__":
     main()

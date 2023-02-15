@@ -4,7 +4,7 @@ import math
 import argparse
 
 class Node:
-    def __init__(self, feature=None, threshold=0, left=None, right=None, leaf=True):
+    def __init__(self, feature=None, threshold=0, left=None, right=None, leaf=True,igr=0):
         self.leaf = leaf
         self.prediction = None
         self.feature = feature
@@ -14,6 +14,7 @@ class Node:
         self.num_child_nodes = 0
         self.num_child_nodes_left = 0
         self.num_child_nodes_right = 0
+        self.igr = igr
 
 def give_entropy(df):
     #entropy calc
@@ -48,15 +49,18 @@ def give_split_entropy(df,feature,threshold):
 
 def give_info_gain_ratio(df, feature, threshold):
     #infogain ratio
-    give_info_gain_ratio = give_entropy(df) - give_conditional_entropy(df,feature,threshold)
+    give_info_gain = give_entropy(df) - give_conditional_entropy(df,feature,threshold)
     df_then = df[df[feature]>=threshold]
     df_else = df[df[feature]<threshold]
     p_then = float(df_then.shape[0]/df.shape[0])
     p_else = float(df_else.shape[0]/df.shape[0])
-    print("The two probabilities used in entropy split comp:",p_then,p_else)
+    #print("The two probabilities used in entropy split comp:",p_then,p_else)
     entropy_split = -p_then*np.log2(p_then) - p_else*np.log2(p_else)
-    give_info_gain_ratio = give_info_gain_ratio/entropy_split
-    return(give_info_gain_ratio)
+    if entropy_split==0:
+        give_info_gain_ratio = float("-inf")
+    else:
+        give_info_gain_ratio = give_info_gain/entropy_split
+    return(give_info_gain_ratio,give_info_gain)
 
 def get_threshold(df,feature):
     feature_values = df[feature].tolist()
@@ -64,10 +68,12 @@ def get_threshold(df,feature):
     selected_threshold = 0
     for i in range(len(feature_values)):
         threshold = feature_values[i]
-        igr = give_info_gain_ratio(df,feature,threshold)
-        if (igr>max_igr):
-            max_igr = igr
-            selected_threshold = threshold
+        (igr,ig) = give_info_gain_ratio(df,feature,threshold)
+        #print(feature,">=",threshold,igr,ig)
+        if (igr!=float("-inf")):
+            if(igr>max_igr):
+                max_igr = igr
+                selected_threshold = threshold
     return (selected_threshold,max_igr)
 
 def get_feature(df, feature_list):
@@ -76,7 +82,7 @@ def get_feature(df, feature_list):
     selected_threshold = 0
     for f in feature_list:
         (threshold,igr) = get_threshold(df,f)
-        print("Compare the IGR from the earlier computation and in line computation:",igr,give_info_gain_ratio(df,f,threshold))
+        #print("Compare the IGR from the earlier computation and in line computation:",igr,give_info_gain_ratio(df,f,threshold))
         if (igr > max_igr):
             max_igr = igr
             selected_feature = f
@@ -108,20 +114,20 @@ def build_decision_tree(df,feature_list):
         nd.leaf = True
         nd.num_child_nodes = num_true + num_false
         if (num_true>=num_false):
-            nd.prediction = True
+            nd.prediction = 1
         else:
-            nd.prediction = False
+            nd.prediction = 0
         return nd
     else:
         #create a branch after selecting feature and threshold
         (f,thresh,igr) = get_feature(df,feature_list)
         split_then_df = df[df[f]>=thresh]
         split_else_df = df[df[f]<thresh]
-        nd = Node(feature=f, leaf=False, threshold=thresh)
+        nd = Node(feature=f, leaf=False, threshold=thresh,igr=igr)
         nd.num_child_nodes = df.shape[0]
         nd.num_child_nodes_left = split_then_df.shape[0]
         nd.num_child_nodes_right = split_else_df.shape[0]
-
+        print("Node constructed, now building other child nodes")
         nd.left = build_decision_tree(split_then_df,feature_list)
         nd.right = build_decision_tree(split_else_df,feature_list)
         return(nd)
@@ -132,7 +138,7 @@ def show_tree(nd=None, level=0,right_br=False,right_f='x1',right_thresh=0):
     if (nd.leaf==True):
         print("|---","|---"*level,"class:",nd.prediction,"num_items:",nd.num_child_nodes)
     else:
-        print("|---","|---"*level,nd.feature,">=",nd.threshold)
+        print("|---","|---"*level,nd.feature,">=",nd.threshold,"IGR:",nd.igr)
         show_tree(nd.left,level+1)
         show_tree(nd.right,level+1,True,nd.feature,nd.threshold)
     

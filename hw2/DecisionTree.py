@@ -83,12 +83,27 @@ def get_feature(df, feature_list):
             selected_threshold = threshold
     return(selected_feature,selected_threshold,max_igr)
 
+#Entropy is zero for all candidate splits if the item values are all same for a given feature
+def all_candidate_split_entropy(df,feature_list):
+    same_entries = True
+    for f in feature_list:
+        values = df[f].tolist()
+        if (len(set(values))==1 and same_entries==True):
+            same_entries=True
+        else:
+            same_entries=False
+    return(same_entries)
+
 def build_decision_tree(df,feature_list):
     num_true = df[df['y']==1].shape[0]
     num_false = df[df['y']==0].shape[0]
 
-    #break condition
-    if (num_true==0 or num_false==0):
+    #break condition:
+    #If the node is empty: df.shape[0]==0
+    #If the gain ratio is zero for any candidate split, ergo, all the items have the same label(either 0 or 1)
+    #If entropy is zero for all candidate splits=>value is same across all items for all features
+
+    if (num_true==0 or num_false==0 or all_candidate_split_entropy(df,feature_list)==True):
         nd = Node()
         nd.leaf = True
         nd.num_child_nodes = num_true + num_false
@@ -121,7 +136,6 @@ def show_tree(nd=None, level=0,right_br=False,right_f='x1',right_thresh=0):
         show_tree(nd.left,level+1)
         show_tree(nd.right,level+1,True,nd.feature,nd.threshold)
     
-
 def load_data(filename):
     print("running loading")
     # read text file into pandas DataFrame
